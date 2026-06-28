@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AI Podcast</title>
+<meta property="og:title" content="Listen to this AI-generated podcast" />
+<meta property="og:description" content="Open it in AI Podcast — hear it or read it on your phone." />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(120% 90% at 50% 0%, #2a2160 0%, #0f0f0f 60%);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+  }
+  .card { max-width: 420px; width: 100%; }
+  .badge {
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #1db954; font-weight: 700; margin-bottom: 10px;
+  }
+  h1 { font-size: 26px; line-height: 1.25; margin: 0 0 14px; }
+  p { color: #b3b3b3; font-size: 15px; line-height: 1.5; margin: 0 0 26px; }
+  .btn {
+    display: none; width: 100%; padding: 16px 20px; border: 0;
+    border-radius: 999px; font-size: 16px; font-weight: 700; cursor: pointer;
+    text-decoration: none; margin-bottom: 12px;
+  }
+  .btn.show { display: inline-block; }
+  .btn-primary { background: #1db954; color: #08120b; }
+  .btn-ghost { background: rgba(255,255,255,0.10); color: #fff; }
+  .spinner {
+    width: 26px; height: 26px; margin: 0 auto 22px;
+    border: 3px solid rgba(255,255,255,0.2); border-top-color: #1db954;
+    border-radius: 50%; animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
+    <div class="badge">AI Podcast</div>
+    <h1 id="headline">Opening your podcast…</h1>
+    <p id="sub">If nothing happens, choose an option below.</p>
+    <a class="btn btn-primary" id="open" href="#">Open in the app</a>
+    <a class="btn btn-ghost" id="store-android" href="#">Get it on Google Play</a>
+    <a class="btn btn-ghost" id="store-ios" href="#">Download on the App Store</a>
+  </div>
+
+<script>
+(function () {
+  // ── Config — keep in sync with the apps ──────────────────────────────────
+  var PACKAGE = "com.svr.offlineaipodcast";   // Android applicationId
+  var SCHEME  = "aipodcast";                   // custom URL scheme (both OSes)
+  var HOST    = "share";                       // deep-link host
+  var PLAY_URL = "https://play.google.com/store/apps/details?id=" + PACKAGE +
+                 "&referrer=utm_source%3Dshare";
+  var IOS_URL  = "https://apps.apple.com/us/app/offline-ai-podcast/id6768227087";
+
+  // The whole podcast (compressed + URL-safe base64) rides in the URL
+  // fragment, which browsers never send to a server.
+  var payload = (location.hash || "").replace(/^#/, "");
+
+  // ── Platform detection ───────────────────────────────────────────────────
+  var ua = navigator.userAgent || navigator.vendor || "";
+  var isAndroid = /android/i.test(ua);
+  // iPadOS 13+ masquerades as macOS, so also check for a touch-capable "Mac".
+  var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+              (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  var el = function (id) { return document.getElementById(id); };
+  var hideSpinner = function () { el("spinner").style.display = "none"; };
+  var show = function (id) { el(id).classList.add("show"); };
+
+  // Deep link into an installed app (same scheme on Android & iOS).
+  var schemeUrl = SCHEME + "://" + HOST + "?d=" + encodeURIComponent(payload);
+
+  // Wire the store buttons up front.
+  el("store-android").href = PLAY_URL;
+  el("store-ios").href = IOS_URL;
+
+  // ── No payload → plain visit. Send to the right store / show a landing. ──
+  if (!payload) {
+    el("headline").textContent = "AI Podcast";
+    el("sub").textContent = "On-device AI podcasts you can hear or read.";
+    hideSpinner();
+    if (isAndroid) { location.replace(PLAY_URL); return; }
+    if (isIOS)     { location.replace(IOS_URL);  return; }
+    show("store-android"); show("store-ios");
+    return;
+  }
+
+  // ── Android: intent:// opens the app, or auto-falls back to Play Store ────
+  if (isAndroid) {
+    var intentUrl =
+      "intent://" + HOST + "?d=" + encodeURIComponent(payload) +
+      "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE +
+      ";S.browser_fallback_url=" + encodeURIComponent(PLAY_URL) + ";end";
+    el("open").href = intentUrl;
+    show("open"); show("store-android");
+    location.replace(intentUrl);
+    return;
+  }
+
+  // ── iOS: try the custom scheme; if the app doesn't take over within a
+  //    short window, the page is still visible → it isn't installed → go to
+  //    the App Store. (Universal Links would avoid the timer, but they need
+  //    an apple-app-site-association file + the app's associated-domains
+  //    entitlement; the scheme + fallback works without that setup.) ────────
+  if (isIOS) {
+    el("open").href = schemeUrl;
+    show("open"); show("store-ios");
+
+    var bailed = false;
+    var fallback = setTimeout(function () {
+      if (!document.hidden && !bailed) location.replace(IOS_URL);
+    }, 1500);
+
+    // If the app opens, the page gets backgrounded — cancel the store jump.
+    var cancel = function () {
+      if (document.hidden) { bailed = true; clearTimeout(fallback); }
+    };
+    document.addEventListener("visibilitychange", cancel);
+    window.addEventListener("pagehide", function () {
+      bailed = true; clearTimeout(fallback);
+    });
+
+    // Trigger the deep link.
+    window.location = schemeUrl;
+    return;
+  }
+
+  // ── Desktop / other: it's a mobile app — offer both stores. ──────────────
+  el("open").href = schemeUrl;
+  el("headline").textContent = "Open in AI Podcast";
+  el("sub").textContent =
+    "AI Podcast is a mobile app. Open this link on your Android or iOS " +
+    "device, or install it from the store.";
+  hideSpinner();
+  show("store-android"); show("store-ios");
+})();
+</script>
+</body>
+</html>
